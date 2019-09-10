@@ -49,6 +49,28 @@ main = hSetBuffering stdout LineBuffering
            <> progDesc "Hackage overlay generator"
            <> header "tool - a tool for generating hackage overlays")
 
+fetchSources :: Config -> Set.Set PkgId -> Sh ()
+fetchSources config pkgs = do
+  withTmpDir $ \tmpdir -> do
+    let cfgFile = tmpdir </> "cabal.cfg"
+    writefile cfgFile $ T.unlines
+      [ "repository " <> toTextArg (_remote_repo_name config)
+      , "  url: " <> toTextArg (_remote_repo_url config)
+      , "  secure: True"
+      , ""
+      , "http-transport: plain-http"
+      , "remote-repo-cache: " <> toTextIgnore (_remote_repo_cache config)
+      ]
+    run_ "cabal"  ["--config-file=" <> toTextIgnore cfgFile, "update"]
+
+    -- FIXME: Can't fetch all packages at once due to
+    -- https://gitlab.haskell.org/ghc/head.hackage/issues/6.
+    let fetch pkg =
+          run_ "cabal" ["--config-file=" <> toTextIgnore cfgFile, "fetch", "--no-dependencies", pid2txt pkg]
+    mapM_ fetch (Set.toList pkgs)
+    --run_ "cabal" (["--config-file=" <> toTextIgnore cfgFile, "fetch", "--no-dependencies"] ++
+    --              map pid2txt (Set.toList pkgs))
+
 mkOverlay :: Config -> Sh ()
 mkOverlay config = do
   unlessM (test_d (_patches config)) $
@@ -82,19 +104,7 @@ mkOverlay config = do
       cabalFns = cabalFns0 Set.\\ patchFns
 
   -- pre-fetch packages
-  withTmpDir $ \tmpdir -> do
-    let cfgFile = tmpdir </> "cabal.cfg"
-    writefile cfgFile $ T.unlines
-      [ "repository " <> toTextArg (_remote_repo_name config)
-      , "  url: " <> toTextArg (_remote_repo_url config)
-      , "  secure: True"
-      , ""
-      , "http-transport: plain-http"
-      , "remote-repo-cache: " <> toTextIgnore (_remote_repo_cache config)
-      ]
-    run_ "cabal"  ["--config-file=" <> toTextIgnore cfgFile, "update"]
-    run_ "cabal" (["--config-file=" <> toTextIgnore cfgFile, "fetch", "--no-dependencies"] ++
-                  map pid2txt (Set.toList $ cabalFns0 <> patchFns))
+  fetchSources config (cabalFns <> patchFns)
 
   let get_pkgcache :: PkgId -> Sh FP.FilePath
       get_pkgcache (PkgId pn pv) = absPath $ (_remote_repo_cache config) </> (_remote_repo_name config) </> pn </> pv </> (pn <> "-" <> pv) <.> "tar.gz"
