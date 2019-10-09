@@ -4,8 +4,10 @@
 {-# OPTIONS_GHC -fno-warn-type-defaults #-}
 
 import           Control.Monad
-import           Data.Semigroup          hiding (option)
+import           Data.Maybe
+import           Data.Semigroup            hiding (option)
 import qualified Data.Set                  as Set
+import qualified Data.Map.Strict           as Map
 import           Data.Text                 (Text)
 import qualified Data.Text                 as T
 import qualified Filesystem.Path.CurrentOS as FP
@@ -49,6 +51,38 @@ main = hSetBuffering stdout LineBuffering
            <> progDesc "Hackage overlay generator"
            <> header "tool - a tool for generating hackage overlays")
 
+-- | We can't fetch all packages at once due to
+-- https://gitlab.haskell.org/ghc/head.hackage/issues/6, wherein @cabal fetch@
+-- will only fetch one version of each requested package per invocation.
+--
+-- We used to just fetch each package individually but this was quite slow. To
+-- speed things up a bit we break up the set of packages to be fetched into
+-- batches, each containing at most one version of each package name.
+batchFetchSources :: Set.Set PkgId -> [Set.Set PkgId]
+batchFetchSources pkgs =
+    let pkgVersions0 :: Map.Map Text (Set.Set PkgId)
+        pkgVersions0 = Map.fromListWith (<>)
+          [ (pn, Set.singleton pkgid)
+          | pkgid@(PkgId pn pv) <- Set.toList pkgs
+          ]
+
+        go :: Map.Map Text (Set.Set PkgId) -> [Set.Set PkgId]
+        go pkgVersions
+          | Map.null pkgVersions = []
+          | otherwise = thisBatch : go pkgVersions'
+          where
+            thisBatch :: Set.Set PkgId
+            thisBatch = foldMap (Set.singleton . fst . minView) pkgVersions
+
+            pkgVersions' = dropEmpties $ fmap (snd . minView) pkgVersions
+
+            dropEmpties :: Map.Map k (Set.Set a) -> Map.Map k (Set.Set a)
+            dropEmpties = Map.filter (not . Set.null)
+
+            minView :: Set.Set a -> (a, Set.Set a)
+            minView = fromMaybe (error "empty set") . Set.minView
+    in go pkgVersions0
+
 fetchSources :: Config -> Set.Set PkgId -> Sh ()
 fetchSources config pkgs = do
   withTmpDir $ \tmpdir -> do
@@ -63,11 +97,10 @@ fetchSources config pkgs = do
       ]
     run_ "cabal"  ["--config-file=" <> toTextIgnore cfgFile, "update"]
 
-    -- FIXME: Can't fetch all packages at once due to
-    -- https://gitlab.haskell.org/ghc/head.hackage/issues/6.
+    let batches = batchFetchSources pkgs
     let fetch pkg =
-          run_ "cabal" ["--config-file=" <> toTextIgnore cfgFile, "fetch", "--no-dependencies", pid2txt pkg]
-    mapM_ fetch (Set.toList pkgs)
+          run_ "cabal" $ ["--config-file=" <> toTextIgnore cfgFile, "fetch", "--no-dependencies"] ++ map pid2txt (Set.toList pkg)
+    mapM_ fetch batches
     --run_ "cabal" (["--config-file=" <> toTextIgnore cfgFile, "fetch", "--no-dependencies"] ++
     --              map pid2txt (Set.toList pkgs))
 
