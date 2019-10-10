@@ -170,7 +170,7 @@ mkOverlay config = do
 
                       run_ "patch" ["-i", toTextIgnore patchFn, "-p1", "--no-backup-if-mismatch"]
 
-                  run_ (_tar_cmd config)  [ "-cvz", "--format=ustar", "--numeric-owner", "--owner=root", "--group=root"
+                  run_ (_tar_cmd config)  [ "-cz", "--format=ustar", "--numeric-owner", "--owner=root", "--group=root"
                               , "-f", p <> ".tar.gz", p <> "/"
                               ]
 
