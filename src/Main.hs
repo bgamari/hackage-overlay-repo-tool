@@ -170,9 +170,13 @@ mkOverlay config = do
 
                       run_ "patch" ["-i", toTextIgnore patchFn, "-p1", "--no-backup-if-mismatch"]
 
-                  run_ (_tar_cmd config)  [ "-cz", "--format=ustar", "--numeric-owner", "--owner=root", "--group=root"
-                              , "-f", p <> ".tar.gz", p <> "/"
-                              ]
+                  run_ (_tar_cmd config)
+                    [ "-cz", "--format=ustar"
+                    , "--numeric-owner", "--owner=root", "--group=root"
+                    , "--clamp-mtime", "--mtime=" <> T.pack (FP.encodeString patchFn)
+                    , "-f", p <> ".tar.gz"
+                    , p <> "/"
+                    ]
 
                   cp ("." </> p <.> "tar.gz") pkgDir
 
