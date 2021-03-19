@@ -10,7 +10,7 @@ import qualified Data.Set                  as Set
 import qualified Data.Map.Strict           as Map
 import           Data.Text                 (Text)
 import qualified Data.Text                 as T
-import qualified Filesystem.Path.CurrentOS as FP
+import qualified System.FilePath           as FP
 import           Shelly
 import           System.IO
 import           Options.Applicative
@@ -19,14 +19,14 @@ default (T.Text)
 
 data Config
   = Config
-  { _patches           :: FP.FilePath -- ^ path to the @patches@ folder. Should contain @<package-id>-<package-version>.patch@ files.
-  , _keys              :: FP.FilePath -- ^ path to the keys, as generated with the @hackage-repo-tool@.
-  , _template          :: FP.FilePath -- ^ template repo. This will be copied into the temporary repo, and can contain additional files as needed.
-  , _remote_repo_cache :: FP.FilePath -- ^ path to the package cache
-  , _remote_repo_name  :: String   -- ^ name of the remote repo
-  , _remote_repo_url   :: String   -- ^ url of the remote repo
+  { _patches           :: FilePath -- ^ path to the @patches@ folder. Should contain @<package-id>-<package-version>.patch@ files.
+  , _keys              :: FilePath -- ^ path to the keys, as generated with the @hackage-repo-tool@.
+  , _template          :: FilePath -- ^ template repo. This will be copied into the temporary repo, and can contain additional files as needed.
+  , _remote_repo_cache :: FilePath -- ^ path to the package cache
+  , _remote_repo_name  :: T.Text   -- ^ name of the remote repo
+  , _remote_repo_url   :: T.Text   -- ^ url of the remote repo
   --
-  , _tar_cmd           :: FP.FilePath -- ^ name of the @tar@ command.
+  , _tar_cmd           :: FilePath -- ^ name of the @tar@ command.
   , _target            :: Text   -- ^ e.g. user@host:/path/to/repo/
   }
   deriving (Show)
@@ -88,20 +88,20 @@ fetchSources config pkgs = do
   withTmpDir $ \tmpdir -> do
     let cfgFile = tmpdir </> "cabal.cfg"
     writefile cfgFile $ T.unlines
-      [ "repository " <> toTextArg (_remote_repo_name config)
-      , "  url: " <> toTextArg (_remote_repo_url config)
+      [ "repository " <> _remote_repo_name config
+      , "  url: " <> _remote_repo_url config
       , "  secure: True"
       , ""
       , "http-transport: plain-http"
-      , "remote-repo-cache: " <> toTextIgnore (_remote_repo_cache config)
+      , "remote-repo-cache: " <> T.pack (_remote_repo_cache config)
       ]
-    run_ "cabal"  ["--config-file=" <> toTextIgnore cfgFile, "update"]
+    run_ "cabal"  ["--config-file=" <> T.pack cfgFile, "update"]
 
     let batches = batchFetchSources pkgs
     let fetch pkg =
-          run_ "cabal" $ ["--config-file=" <> toTextIgnore cfgFile, "fetch", "--no-dependencies"] ++ map pid2txt (Set.toList pkg)
+          run_ "cabal" $ ["--config-file=" <> T.pack cfgFile, "fetch", "--no-dependencies"] ++ map pid2txt (Set.toList pkg)
     mapM_ fetch batches
-    --run_ "cabal" (["--config-file=" <> toTextIgnore cfgFile, "fetch", "--no-dependencies"] ++
+    --run_ "cabal" (["--config-file=" <> cfgFile, "fetch", "--no-dependencies"] ++
     --              map pid2txt (Set.toList pkgs))
 
 mkOverlay :: Config -> Sh ()
@@ -130,8 +130,8 @@ mkOverlay config = do
 
   pfns <- ls (_patches config)
 
-  let cabalFns0 = Set.fromList $ map (fn2pid . FP.filename) $ filter (hasExt "cabal") pfns
-      patchFns  = Set.fromList $ map (fn2pid . FP.filename) $ filter (hasExt "patch") pfns
+  let cabalFns0 = Set.fromList $ map fn2pid $ filter (hasExt "cabal") pfns
+      patchFns  = Set.fromList $ map fn2pid $ filter (hasExt "patch") pfns
 
       -- .cabal only fixups via revisions
       cabalFns = cabalFns0 Set.\\ patchFns
@@ -139,7 +139,7 @@ mkOverlay config = do
   -- pre-fetch packages
   fetchSources config (cabalFns <> patchFns)
 
-  let get_pkgcache :: PkgId -> Sh FP.FilePath
+  let get_pkgcache :: PkgId -> Sh FilePath
       get_pkgcache (PkgId pn pv) = absPath $ (_remote_repo_cache config) </> (_remote_repo_name config) </> pn </> pv </> (pn <> "-" <> pv) <.> "tar.gz"
 
   forM_ patchFns $ \pid@(PkgId pn pv) -> do
@@ -159,7 +159,7 @@ mkOverlay config = do
           if not cacheHit
             then -- cache MISS
               chdir tmpdir $ do
-                  run_ (_tar_cmd config) [ "-xf", toTextIgnore pkg ]
+                  run_ (_tar_cmd config) [ "-xf", T.pack pkg ]
 
                   chdir (fromText p) $ do
                       unlessM (test_f (pn <.> "cabal")) $
@@ -168,12 +168,12 @@ mkOverlay config = do
                       unlessM (test_f patchFn) $
                           errorExit ("patch file not found " <> T.pack (show patchFn))
 
-                      run_ "patch" ["-i", toTextIgnore patchFn, "-p1", "--no-backup-if-mismatch"]
+                      run_ "patch" ["-i", T.pack patchFn, "-p1", "--no-backup-if-mismatch"]
 
                   run_ (_tar_cmd config)
                     [ "-cz", "--format=ustar"
                     , "--numeric-owner", "--owner=root", "--group=root"
-                    , "--clamp-mtime", "--mtime=" <> T.pack (FP.encodeString patchFn)
+                    , "--clamp-mtime", "--mtime=" <> T.pack patchFn
                     , "-f", p <> ".tar.gz"
                     , p <> "/"
                     ]
@@ -191,7 +191,7 @@ mkOverlay config = do
       pkg <- get_pkgcache pid
       cp pkg pkgDir
 
-  run_ "hackage-repo-tool" ["bootstrap", "--keys", toTextIgnore (_keys config), "--repo", "repo.tmp/", "--verbose"]
+  run_ "hackage-repo-tool" ["bootstrap", "--keys", T.pack $ _keys config, "--repo", "repo.tmp/", "--verbose"]
 
   sleep 2
 
@@ -203,7 +203,7 @@ mkOverlay config = do
 
               cp cabalFn (idxDir </> pn </> pv </> (pn <.> "cabal"))
 
-  run_ "hackage-repo-tool" ["update", "--keys", toTextIgnore (_keys config), "--repo", "repo.tmp/", "--verbose"]
+  run_ "hackage-repo-tool" ["update", "--keys", T.pack $ _keys config, "--repo", "repo.tmp/", "--verbose"]
 
   rm_f "repo.tmp/01-index.tar"
   rm_rf "repo.tmp/index"
@@ -228,11 +228,11 @@ data PkgId = PkgId !Text !Text
 pid2txt :: PkgId -> Text
 pid2txt (PkgId pn pv) = pn <> "-" <> pv
 
-fn2pid :: FP.FilePath -> PkgId
+fn2pid :: FilePath -> PkgId
 fn2pid fn = PkgId (T.init pn) pv
   where
-    (pn,pv) = T.breakOnEnd "-" t
+    (pn,pv) = T.breakOnEnd "-" (T.pack t)
 
-    t = case toTextIgnore fn of
-          t' | Just t'' <- T.stripSuffix ".patch" t' -> t''
-             | Just t'' <- T.stripSuffix ".cabal" t' -> t''
+    t = case fn of
+          t' | Just t'' <- FP.stripExtension "patch" t' -> t''
+             | Just t'' <- FP.stripExtension "cabal" t' -> t''
