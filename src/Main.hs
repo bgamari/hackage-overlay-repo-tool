@@ -136,6 +136,8 @@ mkOverlay config = do
       -- .cabal only fixups via revisions
       cabalFns = cabalFns0 Set.\\ patchFns
 
+  liftIO $ putStrLn $ "Found " ++ show (Set.size $ cabalFns <> patchFns) ++ " patches."
+
   -- pre-fetch packages
   fetchSources config (cabalFns <> patchFns)
 
