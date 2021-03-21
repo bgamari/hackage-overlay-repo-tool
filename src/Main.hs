@@ -130,8 +130,8 @@ mkOverlay config = do
 
   pfns <- ls (_patches config)
 
-  let cabalFns0 = Set.fromList $ map fn2pid $ filter (hasExt "cabal") pfns
-      patchFns  = Set.fromList $ map fn2pid $ filter (hasExt "patch") pfns
+  let cabalFns0 = Set.fromList $ map fn2pid $ filter (hasExt ".cabal") pfns
+      patchFns  = Set.fromList $ map fn2pid $ filter (hasExt ".patch") pfns
 
       -- .cabal only fixups via revisions
       cabalFns = cabalFns0 Set.\\ patchFns
