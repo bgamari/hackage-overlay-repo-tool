@@ -38,7 +38,7 @@ configParser = Config
                <*> strOption (value ".tmpl"   <> showDefault <> long "template" <> metavar "TEMPLATE" <> help "Template repository to use as a starting point")
                <*> strOption (value "packages" <> showDefault <> long "repo-cache" <> metavar "REPOCACHE" <> help "The path to the package cache.")
                <*> strOption (value "hackage.haskell.org" <> showDefault <> long "repo-name" <> metavar "REPONAME" <> help "The name of the remote repo.")
-               <*> strOption (value "http://hackage-origin.haskell.org/" <> showDefault <> long "repo-url" <> metavar "URL" <> help "The url of the remote repo.")
+               <*> strOption (value "http://hackage.haskell.org/" <> showDefault <> long "repo-url" <> metavar "URL" <> help "The url of the remote repo.")
                <*> strOption (value "tar" <> showDefault <> long "tar" <> metavar "TAR" <> help "`tar` command.")
                <*> argument str (metavar "TARGET" <> help "The rsync target e.g. user@host:/path/to/repo; or an s3 bucket e.g. s3://<bucket>/ -- will use `aws` cli")
 
