@@ -235,6 +235,6 @@ fn2pid fn = PkgId (T.init pn) pv
   where
     (pn,pv) = T.breakOnEnd "-" (T.pack t)
 
-    t = case fn of
-          t' | Just t'' <- FP.stripExtension "patch" t' -> t''
-             | Just t'' <- FP.stripExtension "cabal" t' -> t''
+    t = case FP.takeFileName fn of
+          t' | Just t'' <- FP.stripExtension ".patch" t' -> t''
+             | Just t'' <- FP.stripExtension ".cabal" t' -> t''
