@@ -13,7 +13,7 @@ executable tool
   hs-source-dirs: src/
   main-is: Main.hs
 
-  build-depends: base                  >= 4.8.2.0 && < 4.16
+  build-depends: base                  >= 4.8.2.0 && < 4.17
                , shelly               ^>= 1.10
                , text                 ^>= 1.2
                , filepath              >= 1.4.2 && < 1.5
